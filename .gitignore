@@ -139,3 +139,6 @@ dmypy.json
 
 # FastVLM models
 app/FastVLM/model
+
+# Local checkpoints (large, do not version-control)
+checkpoints/

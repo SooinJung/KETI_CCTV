@@ -27,8 +27,18 @@ def predict(args):
 
     # Load model
     disable_torch_init()
+    # Auto-select device: CUDA > MPS > CPU
+    if torch.cuda.is_available():
+        device_str = "cuda"
+    elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        device_str = "mps"
+    else:
+        device_str = "cpu"
+
     model_name = get_model_name_from_path(model_path)
-    tokenizer, model, image_processor, context_len = load_pretrained_model(model_path, args.model_base, model_name, device="mps")
+    tokenizer, model, image_processor, context_len = load_pretrained_model(
+        model_path, args.model_base, model_name, device=device_str
+    )
 
     # Construct prompt
     qs = args.prompt
@@ -45,7 +55,9 @@ def predict(args):
     model.generation_config.pad_token_id = tokenizer.pad_token_id
 
     # Tokenize prompt
-    input_ids = tokenizer_image_token(prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt').unsqueeze(0).to(torch.device("mps"))
+    input_ids = tokenizer_image_token(
+        prompt, tokenizer, IMAGE_TOKEN_INDEX, return_tensors='pt'
+    ).unsqueeze(0).to(torch.device(device_str))
 
     # Load and preprocess image
     image = Image.open(args.image_file).convert('RGB')
@@ -53,9 +65,14 @@ def predict(args):
 
     # Run inference
     with torch.inference_mode():
+        # Move image tensor to device, use half precision on CUDA/MPS only
+        img = image_tensor.to(device_str)
+        if device_str != "cpu":
+            img = img.half()
+
         output_ids = model.generate(
             input_ids,
-            images=image_tensor.unsqueeze(0).half(),
+            images=img.unsqueeze(0),
             image_sizes=[image.size],
             do_sample=True if args.temperature > 0 else False,
             temperature=args.temperature,
